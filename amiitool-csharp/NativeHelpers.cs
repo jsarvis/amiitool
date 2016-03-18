@@ -1,5 +1,6 @@
-/*
+﻿/*
  * Copyright (C) 2015 Marcos Vives Del Sol
+ * Copyright (C) 2016 Benjamin Krämer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,15 +21,24 @@
  * THE SOFTWARE.
  */
 
-#ifndef HAVE_UTIL_H
-#define HAVE_UTIL_H
+namespace amiitool
+{
+    static class NativeHelpers
+    {
+        public static bool MemCmp(byte[] a, byte[] b, int start, int length)
+        {
+            if (a == b)
+                return true;
+            if (a == null ^ b == null)
+                return false;
 
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
-void aes128ctr(const uint8_t * in, uint8_t * out, size_t size, const uint8_t * key, const uint8_t * iv);
-void sha256hmac(const uint8_t * key, size_t keySize, const uint8_t * in, size_t inSize, uint8_t * out);
-void printhex(void * data, size_t size);
-
-#endif
+            for (int i = 0; i < length; i++)
+            {
+                var offset = start + i;
+                if (a[offset] != b[offset])
+                    return false;
+            }
+            return true;
+        }
+    }
+}

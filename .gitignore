@@ -4,10 +4,13 @@
 # Ignore hidden files, except for gitignore
 .*
 !.gitignore
+*.user
 
 # Ignore binaries
-/build
-/build-mingw32
+/obj
+/packages
+/amiitool-csharp/bin
+/amiitool-csharp/obj
 
 # Ignore copyrighted files
 /key
