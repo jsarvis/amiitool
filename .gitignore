@@ -7,10 +7,9 @@
 *.user
 
 # Ignore binaries
-/obj
+*/obj
+*/bin
 /packages
-/amiitool-csharp/bin
-/amiitool-csharp/obj
 
 # Ignore copyrighted files
 /key

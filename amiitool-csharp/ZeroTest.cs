@@ -22,13 +22,13 @@
  */
 
 using System;
-using System.IO;
+using libamiibo.Encryption;
 
 namespace amiitool
 {
     class ZeroTest
     {
-        private static readonly Nfc3DKeygenMasterkeys ZERO_KEYS = new Nfc3DKeygenMasterkeys {
+        private static readonly KeygenMasterkeys ZERO_KEYS = new KeygenMasterkeys {
             hmacKey = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
             typeString = "\0",
             rfu = 0,
@@ -50,7 +50,7 @@ namespace amiitool
         };
 
         // Output from NFC module running under QEMU
-        private static readonly Nfc3DKeygenDerivedkeys ZERO_CONSOLE_OUTPUT = new Nfc3DKeygenDerivedkeys {
+        private static readonly KeygenDerivedkeys ZERO_CONSOLE_OUTPUT = new KeygenDerivedkeys {
             aesKey = new byte[] { 0xEB, 0x65, 0xC3, 0x24, 0x0A, 0xFD, 0x1A, 0x0C, 0x0B, 0x98, 0xCF, 0xB7, 0xF0, 0x03, 0x56, 0xFB },
             aesIV = new byte[] { 0x95, 0xE4, 0xC0, 0xF4, 0xE2, 0x60, 0x32, 0x7D, 0xAA, 0x47, 0xDC, 0xE8, 0x43, 0x4B, 0x7E, 0xCF },
             hmacKey = new byte[] { 0x2F, 0xF1, 0xF1, 0x2B, 0x5B, 0x19, 0x26, 0x35, 0x22, 0xFA, 0x9D, 0xFB, 0xA1, 0x7B, 0xF3, 0x8A }
@@ -58,7 +58,7 @@ namespace amiitool
 
         public static int Test()
         {
-            Nfc3DKeygenDerivedkeys outkeys = ZERO_KEYS.GenerateKey(ZERO_SEED);
+            KeygenDerivedkeys outkeys = ZERO_KEYS.GenerateKey(ZERO_SEED);
             
             Console.Write("Matches console: ");
             Console.WriteLine(Equals(ZERO_CONSOLE_OUTPUT, outkeys) ? "YES" : "NO");

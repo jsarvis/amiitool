@@ -2,6 +2,8 @@ amiitool
 ========
 amiibo™ encryption/decryption tool
 
+(You also need to get https://github.com/Falco20019/libamiibo in order to compile this!)
+
 Usage
 =====
 **amiitool expects a binary dump. It will not work with XMLs or hexadecimal text files**. Aside from this, amiitool is very easy to use and has a very simple syntax.

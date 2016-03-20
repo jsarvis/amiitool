@@ -23,6 +23,9 @@
 
 using System;
 using System.IO;
+using libamiibo.Data;
+using libamiibo.Encryption;
+using libamiibo.Helper;
 using NDesk.Options;
 
 namespace amiitool
@@ -100,7 +103,7 @@ namespace amiitool
                 return 1;
             }
 
-            Nfc3DAmiiboKeys amiiboKeys = Nfc3DAmiiboKeys.LoadKeys(keyFile);
+            AmiiboKeys amiiboKeys = AmiiboKeys.LoadKeys(keyFile);
             if (amiiboKeys == null)
             {
                 Console.Error.WriteLine("Could not load keys from \"{0}\"", keyFile);
@@ -108,7 +111,7 @@ namespace amiitool
             }
 
             byte[] original = new byte[NTAG215_SIZE];
-            byte[] modified = new byte[Nfc3DAmiiboKeys.NFC3D_AMIIBO_SIZE];
+            byte[] modified = new byte[NtagHelpers.NFC3D_AMIIBO_SIZE];
 
             Stream file;
             try
@@ -127,7 +130,7 @@ namespace amiitool
                 using (var reader = new BinaryReader(file))
                 {
                     readBytes = reader.Read(original, 0, original.Length);
-                    if (readBytes < modified.Length)
+                    if (readBytes < NtagHelpers.NFC3D_AMIIBO_SIZE)
                         throw new Exception("Wrong length");
                 }
             }
@@ -149,6 +152,9 @@ namespace amiitool
                     if (!deactivateSignatureCheck)
                         return 6;
                 }
+
+                var amiiboTag1 = AmiiboTag.FromInternalTag(modified);
+                var amiiboTag2 = AmiiboTag.FromInternalTag(NtagHelpers.GetInternalTag(original));
             }
 
             file = Console.OpenStandardOutput();
