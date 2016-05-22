@@ -22,7 +22,7 @@
  */
 
 using System;
-using libamiibo.Encryption;
+using LibAmiibo.Encryption;
 
 namespace amiitool
 {

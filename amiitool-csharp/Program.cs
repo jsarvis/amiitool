@@ -23,9 +23,9 @@
 
 using System;
 using System.IO;
-using libamiibo.Data;
-using libamiibo.Encryption;
-using libamiibo.Helper;
+using LibAmiibo.Data;
+using LibAmiibo.Encryption;
+using LibAmiibo.Helper;
 using NDesk.Options;
 
 namespace amiitool
