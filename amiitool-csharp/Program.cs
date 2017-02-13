@@ -113,15 +113,18 @@ namespace amiitool
             byte[] original = new byte[NTAG215_SIZE];
             byte[] modified = new byte[NtagHelpers.NFC3D_AMIIBO_SIZE];
 
-            Stream file;
-            try
+            Stream file = Console.OpenStandardInput();
+            if (inputFile != null)
             {
-                file = File.OpenRead(inputFile);
-            }
-            catch(Exception ex)
-            {
-                Console.Error.WriteLine("Could not open input file: {0}", ex.Message);
-                return 3;
+                try
+                {
+                    file = File.OpenRead(inputFile);
+                }
+                catch(Exception ex)
+                {
+                    Console.Error.WriteLine("Could not open input file: {0}", ex.Message);
+                    return 3;
+                }
             }
 
             int readBytes = 0;
