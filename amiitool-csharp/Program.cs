@@ -155,7 +155,7 @@ namespace amiitool
                 }
 
                 var amiiboTag1 = AmiiboTag.FromInternalTag(modified);
-                var amiiboTag2 = AmiiboTag.FromInternalTag(NtagHelpers.GetInternalTag(original));
+                var amiiboTag2 = AmiiboTag.FromNtagData(original);
             }
 
             file = Console.OpenStandardOutput();
@@ -183,7 +183,7 @@ namespace amiitool
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine("CouldCould not write to output: {0}", ex.Message);
+                Console.Error.WriteLine("Could not write to output: {0}", ex.Message);
                 return 3;
             }
 
