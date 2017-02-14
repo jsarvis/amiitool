@@ -63,7 +63,7 @@ namespace amiitool
                 v => outputFile = v
             },
             {
-                "s|skip", "decrypt files with invalid signatures.",
+                "s|skip", "decrypt files with invalid signatures or force encrypting when already encrypted.",
                 v => deactivateSignatureCheck = v != null
             },
             {
@@ -143,13 +143,20 @@ namespace amiitool
 
             if (doEncrypt)
             {
+                byte[] test = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+                if (amiiboKeys.Unpack(original, test))
+                {
+                    Console.Error.WriteLine("!!! WARNING !!!: The tag appears to already be encrypted.");
+                    if (!deactivateSignatureCheck)
+                        return 6;
+                }
                 amiiboKeys.Pack(original, modified);
             }
             else
             {
                 if (!amiiboKeys.Unpack(original, modified))
                 {
-                    Console.Error.WriteLine("!!! WARNING !!!: Tag signature was NOT valid");
+                    Console.Error.WriteLine("!!! WARNING !!!: Tag signature was NOT valid. Maybe this was already decrypted?");
                     if (!deactivateSignatureCheck)
                         return 6;
                 }
