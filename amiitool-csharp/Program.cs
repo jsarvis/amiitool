@@ -116,7 +116,8 @@ namespace amiitool
             }
 
             byte[] original = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
-            byte[] modified = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+            byte[] decrypted = new byte[NtagHelpers.NFC3D_AMIIBO_SIZE];
+            byte[] encrypted = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
 
             Stream file = Console.OpenStandardInput();
             if (inputFile != null)
@@ -133,6 +134,7 @@ namespace amiitool
             }
 
             int readBytes = 0;
+            bool inputEncryptedTag;
             try
             {
                 using (var reader = new BinaryReader(file))
@@ -140,6 +142,17 @@ namespace amiitool
                     readBytes = reader.Read(original, 0, original.Length);
                     if (readBytes < NtagHelpers.NFC3D_AMIIBO_SIZE)
                         throw new Exception("Wrong length");
+                }
+
+                if (readBytes > NtagHelpers.NFC3D_AMIIBO_SIZE)
+                {
+                    inputEncryptedTag = true;
+                    Console.Error.WriteLine("Input file appears to be an encrypted tag.");
+                }
+                else
+                {
+                    inputEncryptedTag = false;
+                    Console.Error.WriteLine("Input file appears to be a decrypted amiibo.");
                 }
             }
             catch (Exception ex)
@@ -162,6 +175,7 @@ namespace amiitool
                 }
 
                 byte[] rawMergable = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+                bool mergeFileEncryptedTag;
 
                 try
                 {
@@ -170,6 +184,17 @@ namespace amiitool
                         readBytes = reader.Read(rawMergable, 0, rawMergable.Length);
                         if (readBytes < NtagHelpers.NFC3D_AMIIBO_SIZE)
                             throw new Exception("Wrong length");
+
+                        if (readBytes > NtagHelpers.NFC3D_AMIIBO_SIZE)
+                        {
+                            mergeFileEncryptedTag = true;
+                            Console.Error.WriteLine("Merge file appears to be an encrypted tag.");
+                        }
+                        else
+                        {
+                            mergeFileEncryptedTag = false;
+                            Console.Error.WriteLine("Merge file appears to be a decrypted amiibo.");
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -178,34 +203,84 @@ namespace amiitool
                     return 3;
                 }
 
-                var originalAmiibo = Amiibo.FromNtagData(original);
-                var mergableAmiibo = Amiibo.FromNtagData(rawMergable);
+                Amiibo originalAmiibo;
+                if (inputEncryptedTag)
+                {
+                    originalAmiibo = Amiibo.FromNtagData(original);
+                }
+                else
+                {
+                    originalAmiibo = Amiibo.FromInternalTag(original);
+                }
+
+                Amiibo mergableAmiibo;
+                if (mergeFileEncryptedTag)
+                {
+                    mergableAmiibo = Amiibo.FromNtagData(rawMergable);
+                }
+                else
+                {
+                    mergableAmiibo = Amiibo.FromInternalTag(rawMergable);
+                }
+
                 if (!originalAmiibo.StatueId.Equals(mergableAmiibo.StatueId))
                 {
                     Console.Error.WriteLine("!!! WARNING !!!: Input and merge file are not the same amiibo. Input is {0} and merge is {1}.", originalAmiibo, mergableAmiibo);
                 }
 
-                byte[] decryptedMergable = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+                byte[] decryptedMergable = new byte[NtagHelpers.NFC3D_AMIIBO_SIZE];
 
                 // Attempt to decrypt
                 if (!amiiboKeys.Unpack(rawMergable, decryptedMergable))
                 {
                     // Already decrypted
-                    decryptedMergable = rawMergable;
+                    Array.Copy(rawMergable, 0, decryptedMergable, 0, decryptedMergable.Length);
+
+                    if (mergeFileEncryptedTag)
+                    {
+                        // Failed to decrypt, but appears encrypted due to size
+                        Console.Error.WriteLine("!!! WARNING !!!: Decryption failed on merge file tag that appeared encrypted. Use skip option to proceed.");
+                        if (!deactivateSignatureCheck)
+                            return 6;
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("HMAC checks indicates the merge file tag appears to already be decrypted as expected.");
+                    }
+                }
+                else
+                {
+                    Console.Error.WriteLine("HMAC checks indicates the merge file tag decrypted successfully.");
                 }
 
-                var mergableTag = AmiiboTag.FromInternalTag(NtagHelpers.GetInternalTag(decryptedMergable));
+                var mergableTag = AmiiboTag.FromInternalTag(decryptedMergable);
 
-                byte[] interim = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+                byte[] interim = new byte[NtagHelpers.NFC3D_AMIIBO_SIZE];
 
                 // Attempt to decrypt
                 if (!amiiboKeys.Unpack(original, interim))
                 {
                     // Already decrypted
-                    interim = original;
+                    Array.Copy(original, 0, interim, 0, interim.Length);
+
+                    if (inputEncryptedTag)
+                    {
+                        // Failed to decrypt, but appears encrypted due to size
+                        Console.Error.WriteLine("!!! WARNING !!!: Decryption failed on input file tag that appeared encrypted. Use skip option to proceed.");
+                        if (!deactivateSignatureCheck)
+                            return 6;
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("HMAC checks indicates the input file tag appears to already be decrypted as expected.");
+                    }
+                }
+                else
+                {
+                    Console.Error.WriteLine("HMAC checks indicates the input file tag decrypted successfully.");
                 }
 
-                var targetTag = AmiiboTag.FromInternalTag(NtagHelpers.GetInternalTag(interim));
+                var targetTag = AmiiboTag.FromInternalTag(interim);
 
                 if (!mergableTag.HasAppData)
                 {
@@ -250,36 +325,48 @@ namespace amiitool
 
                 if (doEncrypt)
                 {
-                    amiiboKeys.Pack(interim, modified);
+                    amiiboKeys.Pack(interim, encrypted);
                 }
                 else
                 {
-                    modified = interim;
+                    decrypted = interim;
                 }
             }
             else
             {
                 if (doEncrypt)
                 {
-                    byte[] test = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
-                    if (amiiboKeys.Unpack(original, test))
+                    if (inputEncryptedTag)
                     {
-                        Console.Error.WriteLine("!!! WARNING !!!: The tag appears to already be encrypted.");
+                        Console.Error.WriteLine("!!! WARNING !!!: Based on input size the tag appears to already be encrypted.");
+                    }
+                    byte[] test = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+                    if (amiiboKeys.Unpack(original, decrypted))
+                    {
+                        Console.Error.WriteLine("!!! WARNING !!!: Based on HMAC checks the tag appears to already be encrypted. Use skip option to proceed.");
                         if (!deactivateSignatureCheck)
                             return 6;
                     }
-                    amiiboKeys.Pack(original, modified);
+                    amiiboKeys.Pack(original, encrypted);
                 }
                 else
                 {
-                    if (!amiiboKeys.Unpack(original, modified))
+                    if (!inputEncryptedTag)
                     {
-                        Console.Error.WriteLine("!!! WARNING !!!: Tag signature was NOT valid. Maybe this was already decrypted?");
+                        Console.Error.WriteLine("!!! WARNING !!!: Based on input size the tag appears to already be decrypted.");
+                    }
+                    if (!amiiboKeys.Unpack(original, decrypted))
+                    {
+                        Console.Error.WriteLine("!!! WARNING !!!: Tag signature was NOT valid. Maybe this was already decrypted? Use skip option to proceed.");
                         if (!deactivateSignatureCheck)
                             return 6;
                     }
+                    else
+                    {
+                        Console.Error.WriteLine("HMAC checks indicates the tag decrypted successfully.");
+                    }
 
-                    var amiiboTag1 = AmiiboTag.FromInternalTag(NtagHelpers.GetInternalTag(modified));
+                    var amiiboTag1 = AmiiboTag.FromInternalTag(decrypted);
                     var amiiboTag2 = AmiiboTag.FromNtagData(original);
                 }
             }
@@ -302,7 +389,15 @@ namespace amiitool
             {
                 using (var writer = new BinaryWriter(file))
                 {
-                    writer.Write(modified, 0, modified.Length);
+                    if (doEncrypt)
+                    {
+                        writer.Write(encrypted, 0, encrypted.Length);
+                    }
+                    else
+                    {
+                        writer.Write(decrypted, 0, decrypted.Length);
+                    }
+                    //TODO is there data in the original tag that gets lost? test re-en/decrypt
                 }
             }
             catch (Exception ex)
