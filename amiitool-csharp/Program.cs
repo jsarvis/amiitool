@@ -303,8 +303,6 @@ namespace amiitool
                 using (var writer = new BinaryWriter(file))
                 {
                     writer.Write(modified, 0, modified.Length);
-                    if (readBytes > modified.Length)
-                        writer.Write(original, modified.Length, readBytes - modified.Length);
                 }
             }
             catch (Exception ex)
