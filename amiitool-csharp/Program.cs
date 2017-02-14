@@ -223,8 +223,6 @@ namespace amiitool
                 if (targetTag.HasAppData || targetTag.AmiiboSettings.Status.HasFlag(Status.SettingsInitialized))
                 {
                     Console.Error.WriteLine("!!! WARNING !!!: The input file already has settings data. Overwriting the following:");
-                    Console.Error.WriteLine("Setup date {0}", targetTag.AmiiboSettings.AmiiboSetupDate);
-                    Console.Error.WriteLine("Last modified date {0}", targetTag.AmiiboSettings.AmiiboLastModifiedDate);
                     Console.Error.WriteLine("Amiibo Nickname {0}", targetTag.AmiiboSettings.AmiiboNickname);
                 }
 
@@ -238,8 +236,6 @@ namespace amiitool
                 //TODO exclude AmiiboNickname and OwnerMii, but might break signature
                 // Copy Amiibo Settings
                 Console.Error.WriteLine("Copying settings data with the following values:");
-                Console.Error.WriteLine("Setup date {0}", mergableTag.AmiiboSettings.AmiiboSetupDate);
-                Console.Error.WriteLine("Last modified date {0}", mergableTag.AmiiboSettings.AmiiboLastModifiedDate);
                 Console.Error.WriteLine("Amiibo Nickname {0}", mergableTag.AmiiboSettings.AmiiboNickname);
                 // mergableTag.AmiiboSettings
                 var amiiboSettings = mergableTag.CryptoBuffer;
