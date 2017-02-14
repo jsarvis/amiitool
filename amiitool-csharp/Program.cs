@@ -32,8 +32,6 @@ namespace amiitool
 {
     class Program
     {
-        public const int NTAG215_SIZE = 540;
-
         private static bool showHelp;
         private static bool doEncrypt;
         private static bool doDecrypt;
@@ -110,8 +108,8 @@ namespace amiitool
                 return 5;
             }
 
-            byte[] original = new byte[NTAG215_SIZE];
-            byte[] modified = new byte[NtagHelpers.NFC3D_AMIIBO_SIZE];
+            byte[] original = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+            byte[] modified = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
 
             Stream file = Console.OpenStandardInput();
             if (inputFile != null)
