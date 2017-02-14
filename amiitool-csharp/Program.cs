@@ -24,6 +24,8 @@
 using System;
 using System.IO;
 using LibAmiibo.Data;
+using LibAmiibo.Data.Figurine;
+using LibAmiibo.Data.Settings;
 using LibAmiibo.Encryption;
 using LibAmiibo.Helper;
 using NDesk.Options;
@@ -37,6 +39,7 @@ namespace amiitool
         private static bool doDecrypt;
         private static bool deactivateSignatureCheck;
         private static string keyFile;
+        private static string mergeFile;
         private static string inputFile;
         private static string outputFile;
 
@@ -53,6 +56,10 @@ namespace amiitool
             {
                 "k|keyfile=", "key set file. For retail amiibo, use \"retail unfixed\" key set.",
                 v => keyFile = v
+            },
+            {
+                "m|mergefile=", "merge app data from this file into the input file (decrypting if needed). encrypt or decrypt flags determine the output file format.",
+                v => mergeFile = v
             },
             {
                 "i|infile=", "input file. If not specified, stdin will be used.",
@@ -77,7 +84,7 @@ namespace amiitool
             Console.Error.WriteLine(
                 "amiitool\n" +
                 "\n" +
-                "Usage: amiitool (-e|-d) -k keyfile [-i input] [-o output]");
+                "Usage: amiitool (-e|-d) -k keyfile [-m mergefile] [-i input] [-o output]");
             p.WriteOptionDescriptions(Console.Error);
         }
 
@@ -141,28 +148,144 @@ namespace amiitool
                 return 3;
             }
 
-            if (doEncrypt)
+            if (!string.IsNullOrEmpty(mergeFile))
             {
-                byte[] test = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
-                if (amiiboKeys.Unpack(original, test))
+                Stream appdataFile;
+                try
                 {
-                    Console.Error.WriteLine("!!! WARNING !!!: The tag appears to already be encrypted.");
-                    if (!deactivateSignatureCheck)
-                        return 6;
+                    appdataFile = File.OpenRead(mergeFile);
                 }
-                amiiboKeys.Pack(original, modified);
+                catch(Exception ex)
+                {
+                    Console.Error.WriteLine("Could not open merge file: {0}", ex.Message);
+                    return 3;
+                }
+
+                byte[] rawMergable = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+
+                try
+                {
+                    using (var reader = new BinaryReader(appdataFile))
+                    {
+                        readBytes = reader.Read(rawMergable, 0, rawMergable.Length);
+                        if (readBytes < NtagHelpers.NFC3D_AMIIBO_SIZE)
+                            throw new Exception("Wrong length");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine("Could not read from merge file: {0}", ex.Message);
+                    return 3;
+                }
+
+                var originalAmiibo = Amiibo.FromNtagData(original);
+                var mergableAmiibo = Amiibo.FromNtagData(rawMergable);
+                if (!originalAmiibo.StatueId.Equals(mergableAmiibo.StatueId))
+                {
+                    Console.Error.WriteLine("!!! WARNING !!!: Input and merge file are not the same amiibo. Input is {0} and merge is {1}.", originalAmiibo, mergableAmiibo);
+                }
+
+                byte[] decryptedMergable = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+
+                // Attempt to decrypt
+                if (!amiiboKeys.Unpack(rawMergable, decryptedMergable))
+                {
+                    // Already decrypted
+                    decryptedMergable = rawMergable;
+                }
+
+                var mergableTag = AmiiboTag.FromInternalTag(NtagHelpers.GetInternalTag(decryptedMergable));
+
+                byte[] interim = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+
+                // Attempt to decrypt
+                if (!amiiboKeys.Unpack(original, interim))
+                {
+                    // Already decrypted
+                    interim = original;
+                }
+
+                var targetTag = AmiiboTag.FromInternalTag(NtagHelpers.GetInternalTag(interim));
+
+                if (!mergableTag.HasAppData)
+                {
+                    if (!mergableTag.AmiiboSettings.Status.HasFlag(Status.SettingsInitialized))
+                    {
+                        Console.Error.WriteLine("The merge file does not have settings data!");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("The merge file does not have app data!");
+                    }
+                    return 3;
+                }
+
+                if (targetTag.HasAppData || targetTag.AmiiboSettings.Status.HasFlag(Status.SettingsInitialized))
+                {
+                    Console.Error.WriteLine("!!! WARNING !!!: The input file already has settings data. Overwriting the following:");
+                    Console.Error.WriteLine("Setup date {0}", targetTag.AmiiboSettings.AmiiboSetupDate);
+                    Console.Error.WriteLine("Last modified date {0}", targetTag.AmiiboSettings.AmiiboLastModifiedDate);
+                    Console.Error.WriteLine("Amiibo Nickname {0}", targetTag.AmiiboSettings.AmiiboNickname);
+                }
+
+                if (targetTag.HasAppData)
+                {
+                    Console.Error.WriteLine("!!! WARNING !!!: The input file already has app data. Overwriting the following:");
+                    Console.Error.WriteLine("App id {0}", targetTag.AmiiboSettings.AppID);
+                    Console.Error.WriteLine("App data title id {0}", targetTag.AmiiboSettings.AppDataInitializationTitleID.TitleID);
+                }
+
+                //TODO exclude AmiiboNickname and OwnerMii, but might break signature
+                // Copy Amiibo Settings
+                Console.Error.WriteLine("Copying settings data with the following values:");
+                Console.Error.WriteLine("Setup date {0}", mergableTag.AmiiboSettings.AmiiboSetupDate);
+                Console.Error.WriteLine("Last modified date {0}", mergableTag.AmiiboSettings.AmiiboLastModifiedDate);
+                Console.Error.WriteLine("Amiibo Nickname {0}", mergableTag.AmiiboSettings.AmiiboNickname);
+                // mergableTag.AmiiboSettings
+                var amiiboSettings = mergableTag.CryptoBuffer;
+                Array.Copy(amiiboSettings, 0, interim, 0x02C, amiiboSettings.Length);
+
+                // Copy App Data
+                Console.Error.WriteLine("Copying app data with the following values:");
+                Console.Error.WriteLine("App id {0}", mergableTag.AmiiboSettings.AppID);
+                Console.Error.WriteLine("App data title id {0}", mergableTag.AmiiboSettings.AppDataInitializationTitleID.TitleID);
+                var appData = mergableTag.AppData;
+                Array.Copy(appData, 0, interim, 0x0DC, appData.Length);
+
+                if (doEncrypt)
+                {
+                    amiiboKeys.Pack(interim, modified);
+                }
+                else
+                {
+                    modified = interim;
+                }
             }
             else
             {
-                if (!amiiboKeys.Unpack(original, modified))
+                if (doEncrypt)
                 {
-                    Console.Error.WriteLine("!!! WARNING !!!: Tag signature was NOT valid. Maybe this was already decrypted?");
-                    if (!deactivateSignatureCheck)
-                        return 6;
+                    byte[] test = new byte[NtagHelpers.NFC3D_NTAG_SIZE];
+                    if (amiiboKeys.Unpack(original, test))
+                    {
+                        Console.Error.WriteLine("!!! WARNING !!!: The tag appears to already be encrypted.");
+                        if (!deactivateSignatureCheck)
+                            return 6;
+                    }
+                    amiiboKeys.Pack(original, modified);
                 }
+                else
+                {
+                    if (!amiiboKeys.Unpack(original, modified))
+                    {
+                        Console.Error.WriteLine("!!! WARNING !!!: Tag signature was NOT valid. Maybe this was already decrypted?");
+                        if (!deactivateSignatureCheck)
+                            return 6;
+                    }
 
-                var amiiboTag1 = AmiiboTag.FromInternalTag(modified);
-                var amiiboTag2 = AmiiboTag.FromNtagData(original);
+                    var amiiboTag1 = AmiiboTag.FromInternalTag(NtagHelpers.GetInternalTag(modified));
+                    var amiiboTag2 = AmiiboTag.FromNtagData(original);
+                }
             }
 
             file = Console.OpenStandardOutput();
