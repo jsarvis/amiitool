@@ -397,7 +397,6 @@ namespace amiitool
                     {
                         writer.Write(decrypted, 0, decrypted.Length);
                     }
-                    //TODO is there data in the original tag that gets lost? test re-en/decrypt
                 }
             }
             catch (Exception ex)
