@@ -37,6 +37,7 @@ namespace amiitool
         private static bool showHelp;
         private static bool doEncrypt;
         private static bool doDecrypt;
+        private static bool doExtract;
         private static bool deactivateSignatureCheck;
         private static string keyFile;
         private static string mergeFile;
@@ -52,6 +53,10 @@ namespace amiitool
             {
                 "d|decrypt", "decrypt and test amiibo.",
                 v => doDecrypt = v != null
+            },
+            {
+                "x|extract", "extract app data from the input file into the output file rather than writing the tag.",
+                v => doExtract = v != null
             },
             {
                 "k|keyfile=", "key set file. For retail amiibo, use \"retail unfixed\" key set.",
@@ -84,7 +89,7 @@ namespace amiitool
             Console.Error.WriteLine(
                 "amiitool\n" +
                 "\n" +
-                "Usage: amiitool (-e|-d) -k keyfile [-m mergefile] [-i input] [-o output]");
+                "Usage: amiitool (-e|-d|-x) -k keyfile [-m mergefile] [-i input] [-o output]");
             p.WriteOptionDescriptions(Console.Error);
         }
 
@@ -102,7 +107,7 @@ namespace amiitool
                 return 1;
             }
 
-            if (showHelp || !(doEncrypt ^ doDecrypt) || keyFile == null)
+            if (showHelp || !(doEncrypt ^ doDecrypt ^ doExtract) || (doEncrypt && doExtract) || (doEncrypt && doDecrypt) || (doEncrypt && doExtract) || keyFile == null)
             {
                 ShowHelp();
                 return 1;
@@ -159,6 +164,90 @@ namespace amiitool
             {
                 Console.Error.WriteLine("Could not read from input: {0}", ex.Message);
                 return 3;
+            }
+
+            if (doExtract)
+            {
+                // Attempt to decrypt
+                if (!amiiboKeys.Unpack(original, decrypted))
+                {
+                    // Already decrypted
+                    Array.Copy(original, 0, decrypted, 0, decrypted.Length);
+
+                    if (inputEncryptedTag)
+                    {
+                        // Failed to decrypt, but appears encrypted due to size
+                        Console.Error.WriteLine("!!! WARNING !!!: Decryption failed on input file tag that appeared encrypted. Use skip option to proceed.");
+                        if (!deactivateSignatureCheck)
+                            return 6;
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("HMAC checks indicates the input file tag appears to already be decrypted as expected.");
+                    }
+                }
+                else
+                {
+                    Console.Error.WriteLine("HMAC checks indicates the input file tag decrypted successfully.");
+                }
+
+                var targetTag = AmiiboTag.FromInternalTag(decrypted);
+
+                if (!targetTag.HasAppData)
+                {
+                    if (!targetTag.AmiiboSettings.Status.HasFlag(Status.SettingsInitialized))
+                    {
+                        Console.Error.WriteLine("The input file does not have settings data!");
+                        return 3;
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("The input file does not have app data!");
+                    }
+                }
+
+                file = Console.OpenStandardOutput();
+                if (outputFile != null)
+                {
+                    try
+                    {
+                        file = File.OpenWrite(outputFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine("Could not open output file: {0}", ex.Message);
+                        return 4;
+                    }
+                }
+
+                try
+                {
+                    using (var writer = new BinaryWriter(file))
+                    {
+                        // Extract Amiibo Settings
+                        Console.Error.WriteLine("Extracting settings and app data with the following values:");
+                        Console.Error.WriteLine("Setup date {0}", targetTag.AmiiboSettings.AmiiboSetupDate);
+                        Console.Error.WriteLine("Last modified date {0}", targetTag.AmiiboSettings.AmiiboLastModifiedDate);
+                        Console.Error.WriteLine("Amiibo Nickname {0}", targetTag.AmiiboSettings.AmiiboNickname);
+                        Console.Error.WriteLine("App id {0}", targetTag.AmiiboSettings.AppID);
+                        Console.Error.WriteLine("App data title id {0}", targetTag.AmiiboSettings.AppDataInitializationTitleID.TitleID);
+                        // targetTag.AmiiboSettings and AppData
+                        var encryptableData = targetTag.CryptoBuffer;
+                        writer.Write((Int32)0x14); // offset
+                        writer.Write((Int32)0x20); // length 32 bytes
+                        writer.Write(encryptableData, 0, 0x20); // data
+                        writer.Write((Int32)0xA0); // offset
+                        writer.Write(encryptableData.Length - 0x20); // length 0x168 (360) bytes
+                        writer.Write(encryptableData, 0x20, encryptableData.Length - 0x20);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine("Could not write to output: {0}", ex.Message);
+                    return 3;
+                }
+
+                return 0;
             }
 
             if (!string.IsNullOrEmpty(mergeFile))
@@ -255,6 +344,19 @@ namespace amiitool
 
                 var mergableTag = AmiiboTag.FromInternalTag(decryptedMergable);
 
+                if (!mergableTag.HasAppData)
+                {
+                    if (!mergableTag.AmiiboSettings.Status.HasFlag(Status.SettingsInitialized))
+                    {
+                        Console.Error.WriteLine("The merge file does not have settings data!");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("The merge file does not have app data!");
+                    }
+                    return 3;
+                }
+
                 byte[] interim = new byte[NtagHelpers.NFC3D_AMIIBO_SIZE];
 
                 // Attempt to decrypt
@@ -282,19 +384,6 @@ namespace amiitool
 
                 var targetTag = AmiiboTag.FromInternalTag(interim);
 
-                if (!mergableTag.HasAppData)
-                {
-                    if (!mergableTag.AmiiboSettings.Status.HasFlag(Status.SettingsInitialized))
-                    {
-                        Console.Error.WriteLine("The merge file does not have settings data!");
-                    }
-                    else
-                    {
-                        Console.Error.WriteLine("The merge file does not have app data!");
-                    }
-                    return 3;
-                }
-
                 if (targetTag.HasAppData || targetTag.AmiiboSettings.Status.HasFlag(Status.SettingsInitialized))
                 {
                     Console.Error.WriteLine("!!! WARNING !!!: The input file already has settings data. Overwriting the following:");
@@ -312,20 +401,15 @@ namespace amiitool
 
                 //TODO exclude AmiiboNickname and OwnerMii, but might break signature
                 // Copy Amiibo Settings
-                Console.Error.WriteLine("Copying settings data with the following values:");
+                Console.Error.WriteLine("Copying settings and app data with the following values:");
                 Console.Error.WriteLine("Setup date {0}", mergableTag.AmiiboSettings.AmiiboSetupDate);
                 Console.Error.WriteLine("Last modified date {0}", mergableTag.AmiiboSettings.AmiiboLastModifiedDate);
                 Console.Error.WriteLine("Amiibo Nickname {0}", mergableTag.AmiiboSettings.AmiiboNickname);
-                // mergableTag.AmiiboSettings
-                var amiiboSettings = mergableTag.CryptoBuffer;
-                Array.Copy(amiiboSettings, 0, interim, 0x02C, amiiboSettings.Length);
-
-                // Copy App Data
-                Console.Error.WriteLine("Copying app data with the following values:");
                 Console.Error.WriteLine("App id {0}", mergableTag.AmiiboSettings.AppID);
                 Console.Error.WriteLine("App data title id {0}", mergableTag.AmiiboSettings.AppDataInitializationTitleID.TitleID);
-                var appData = mergableTag.AppData;
-                Array.Copy(appData, 0, interim, 0x0DC, appData.Length);
+                // mergableTag.AmiiboSettings and AppData
+                var encryptableData = mergableTag.CryptoBuffer;
+                Array.Copy(encryptableData, 0, interim, 0x02C, encryptableData.Length);
 
                 if (doEncrypt)
                 {
